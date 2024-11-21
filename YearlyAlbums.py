@@ -252,11 +252,14 @@ def handle_auth():
     if 'code' in query_params:
         code = query_params['code'][0]
         try:
-            token_info = sp_oauth.get_access_token(code)
+            # Explicitly set as_dict=True to obtain token information as a dictionary
+            token_info = sp_oauth.get_access_token(code, as_dict=True)
             st.session_state['token_info'] = token_info
             st.session_state['authenticated'] = True
-            # Clear the query params to clean up the URL
+            # Clear the query params to prevent reusing the same code
             st.experimental_set_query_params()
+            # Rerun the app to update the UI without the query params
+            st.experimental_rerun()
             return token_info
         except Exception as e:
             st.error(f"Failed to obtain access token: {e}")
@@ -267,6 +270,29 @@ def handle_auth():
         return None
     else:
         return None
+
+# -------------------------------
+# Token Refreshing Function (Optional)
+# -------------------------------
+
+def get_valid_token():
+    """
+    Retrieve a valid access token, refreshing it if necessary.
+    """
+    token_info = st.session_state.get('token_info', None)
+    if not token_info:
+        return None
+
+    if sp_oauth.is_token_expired(token_info):
+        try:
+            token_info = sp_oauth.refresh_access_token(token_info['refresh_token'])
+            st.session_state['token_info'] = token_info
+            return token_info['access_token']
+        except Exception as e:
+            st.error(f"Failed to refresh access token: {e}")
+            return None
+    else:
+        return token_info['access_token']
 
 # -------------------------------
 # Main Authentication Logic
@@ -299,11 +325,11 @@ else:
 
     # Fetch top albums if not already fetched
     if 'top_albums' not in st.session_state:
-        token_info = st.session_state['token_info']
-        if token_info:
+        access_token = get_valid_token()
+        if access_token:
             try:
                 # Use the access token to fetch top albums
-                top_albums = get_top_albums(token_info['access_token'])
+                top_albums = get_top_albums(access_token)
                 st.session_state['top_albums'] = top_albums
             except Exception as e:
                 st.error(f"Error fetching top albums: {e}")
