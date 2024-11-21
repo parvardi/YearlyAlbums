@@ -1,7 +1,7 @@
 import streamlit as st
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
 from PIL import Image, ImageDraw, ImageFont
 import requests
@@ -9,6 +9,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from io import BytesIO
 import uuid  # For generating a unique state parameter
+import json
 
 # -------------------------------
 # Configuration and Initialization
@@ -45,13 +46,6 @@ def create_spotify_oauth(state):
         state=state  # Pass the state parameter for security
     )
 
-# Generate a unique state parameter if not already set
-if 'oauth_state' not in st.session_state:
-    st.session_state['oauth_state'] = str(uuid.uuid4())
-
-# Initialize SpotifyOAuth globally with the state
-sp_oauth = create_spotify_oauth(st.session_state['oauth_state'])
-
 # -------------------------------
 # Retry and Session Configuration
 # -------------------------------
@@ -66,25 +60,18 @@ retries = Retry(
 adapter = HTTPAdapter(max_retries=retries)
 session.mount('https://', adapter)
 
-# Create a Spotipy client with the custom session and timeout
-sp = spotipy.Spotify(
-    auth_manager=sp_oauth,
-    requests_timeout=30,  # Increased timeout to 30 seconds
-    requests_session=session,
-)
-
 # -------------------------------
 # Helper Functions
 # -------------------------------
 
 @st.cache_data(ttl=0)
-def get_top_albums(token):
+def get_top_albums(access_token):
     """
     Fetch the user's top albums from Spotify using the provided access token.
     """
     try:
         # Create a Spotify client with the token
-        sp_client = spotipy.Spotify(auth=token)
+        sp_client = spotipy.Spotify(auth=access_token)
         top_albums = defaultdict(list)
         current_year = datetime.now().year
         seen_albums = set()
@@ -253,7 +240,7 @@ def handle_auth():
     exchanging it for an access token, and storing it in session state.
     """
     # Get the query parameters from the URL
-    query_params = st.query_params  # Updated from st.experimental_get_query_params()
+    query_params = st.query_params
 
     if 'code' in query_params:
         code = query_params['code'][0]
@@ -265,15 +252,37 @@ def handle_auth():
             return None
 
         try:
-            # Exchange the authorization code for an access token
-            token_info = sp_oauth.get_access_token(code, as_dict=True)
-            st.session_state['token_info'] = token_info
+            # Manually exchange the authorization code for access and refresh tokens
+            token_url = 'https://accounts.spotify.com/api/token'
+            payload = {
+                'grant_type': 'authorization_code',
+                'code': code,
+                'redirect_uri': st.secrets["SPOTIPY_REDIRECT_URI"],
+                'client_id': st.secrets["SPOTIPY_CLIENT_ID"],
+                'client_secret': st.secrets["SPOTIPY_CLIENT_SECRET"],
+            }
+            headers = {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+            response = requests.post(token_url, data=payload, headers=headers)
+            response.raise_for_status()  # Raise an exception for HTTP errors
+            token_info = response.json()
+
+            # Store token information in session state
+            st.session_state['access_token'] = token_info['access_token']
+            st.session_state['refresh_token'] = token_info.get('refresh_token')
+            st.session_state['expires_at'] = datetime.now() + timedelta(seconds=token_info['expires_in'])
             st.session_state['authenticated'] = True
+
             # Clear the query params to prevent code reuse
             st.experimental_set_query_params()
             # Rerun the app to update the UI without the query params
             st.experimental_rerun()
+
             return token_info
+        except requests.exceptions.HTTPError as http_err:
+            st.error(f"HTTP error occurred during token exchange: {http_err}")
+            return None
         except Exception as e:
             st.error(f"Failed to obtain access token: {e}")
             return None
@@ -285,60 +294,101 @@ def handle_auth():
         return None
 
 # -------------------------------
-# Token Refreshing Function (Optional)
+# Token Refreshing Function
 # -------------------------------
 
-def get_valid_token():
+def refresh_access_token(refresh_token):
     """
-    Retrieve a valid access token, refreshing it if necessary.
+    Refresh the access token using the refresh token.
     """
-    token_info = st.session_state.get('token_info', None)
-    if not token_info:
-        return None
+    try:
+        token_url = 'https://accounts.spotify.com/api/token'
+        payload = {
+            'grant_type': 'refresh_token',
+            'refresh_token': refresh_token,
+            'client_id': st.secrets["SPOTIPY_CLIENT_ID"],
+            'client_secret': st.secrets["SPOTIPY_CLIENT_SECRET"],
+        }
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+        response = requests.post(token_url, data=payload, headers=headers)
+        response.raise_for_status()
+        token_info = response.json()
 
-    if sp_oauth.is_token_expired(token_info):
-        try:
-            token_info = sp_oauth.refresh_access_token(token_info['refresh_token'])
-            st.session_state['token_info'] = token_info
-            return token_info['access_token']
-        except Exception as e:
-            st.error(f"Failed to refresh access token: {e}")
-            return None
-    else:
+        # Update token information in session state
+        st.session_state['access_token'] = token_info['access_token']
+        st.session_state['expires_at'] = datetime.now() + timedelta(seconds=token_info['expires_in'])
+
+        # Spotify may or may not return a new refresh token
+        if 'refresh_token' in token_info:
+            st.session_state['refresh_token'] = token_info['refresh_token']
+
         return token_info['access_token']
+    except requests.exceptions.HTTPError as http_err:
+        st.error(f"HTTP error occurred during token refresh: {http_err}")
+        return None
+    except Exception as e:
+        st.error(f"Failed to refresh access token: {e}")
+        return None
 
 # -------------------------------
 # Main Authentication Logic
 # -------------------------------
 
+# Initialize 'oauth_state' if not present
+if 'oauth_state' not in st.session_state:
+    st.session_state['oauth_state'] = str(uuid.uuid4())
+
+# Handle OAuth callback if present
+handle_auth()
+
 # Check if the user is already authenticated
-if 'authenticated' not in st.session_state:
-    # Handle OAuth callback if present
-    token_info = handle_auth()
-    if token_info:
-        # Successful authentication
+if 'authenticated' not in st.session_state or not st.session_state['authenticated']:
+    # User is not authenticated; show the authentication button
+    auth_url = SpotifyOAuth(
+        client_id=st.secrets["SPOTIPY_CLIENT_ID"],
+        client_secret=st.secrets["SPOTIPY_CLIENT_SECRET"],
+        redirect_uri=st.secrets["SPOTIPY_REDIRECT_URI"],
+        scope="user-top-read",
+        cache_path=None,
+        state=st.session_state['oauth_state']
+    ).get_authorize_url()
+    st.markdown(f"""
+    <a href="{auth_url}" target="_self"><button>Authenticate to Spotify</button></a>
+    """, unsafe_allow_html=True)
+else:
+    # User is authenticated
+    user_name = st.session_state.get('user_name', 'User')
+    if 'user_name' not in st.session_state:
         try:
             # Create a Spotify client with the obtained token
-            sp_client = spotipy.Spotify(auth=token_info['access_token'])
+            sp_client = spotipy.Spotify(auth=st.session_state['access_token'])
             user = sp_client.current_user()
             st.session_state['user_name'] = user['display_name']
             st.success(f"Authenticated as {user['display_name']}")
         except Exception as e:
             st.error(f"Error fetching user data: {e}")
     else:
-        # User is not authenticated; show the authentication button
-        auth_url = sp_oauth.get_authorize_url()
-        st.markdown(f"""
-        <a href="{auth_url}" target="_self"><button>Authenticate to Spotify</button></a>
-        """, unsafe_allow_html=True)
-else:
-    # User is authenticated
-    user_name = st.session_state.get('user_name', 'User')
-    st.success(f"Authenticated as {user_name}")
+        st.success(f"Authenticated as {user_name}")
+
+    # Check if the access token is expired
+    if datetime.now() >= st.session_state['expires_at']:
+        st.info("Access token has expired. Refreshing...")
+        new_access_token = refresh_access_token(st.session_state.get('refresh_token'))
+        if new_access_token:
+            st.success("Access token refreshed successfully.")
+        else:
+            st.error("Failed to refresh access token. Please re-authenticate.")
+            st.session_state.pop('authenticated', None)
+            st.session_state.pop('access_token', None)
+            st.session_state.pop('refresh_token', None)
+            st.session_state.pop('expires_at', None)
+            st.experimental_rerun()
 
     # Fetch top albums if not already fetched
     if 'top_albums' not in st.session_state:
-        access_token = get_valid_token()
+        access_token = st.session_state.get('access_token')
         if access_token:
             try:
                 # Use the access token to fetch top albums
