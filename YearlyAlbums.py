@@ -9,7 +9,6 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from io import BytesIO
 import uuid  # For generating a unique state parameter
-import json
 
 # -------------------------------
 # Configuration and Initialization
@@ -240,11 +239,15 @@ def handle_auth():
     exchanging it for an access token, and storing it in session state.
     """
     # Get the query parameters from the URL
-    query_params = st.query_params
+    query_params = st.query_params  # Updated from st.experimental_get_query_params()
 
     if 'code' in query_params:
         code = query_params['code'][0]
         received_state = query_params.get('state', [None])[0]
+
+        # Debug: Display stored and received state
+        st.write(f"**Stored state:** {st.session_state.get('oauth_state')}")
+        st.write(f"**Received state:** {received_state}")
 
         # Verify the state parameter to prevent CSRF attacks
         if received_state != st.session_state.get('oauth_state'):
@@ -346,14 +349,7 @@ handle_auth()
 # Check if the user is already authenticated
 if 'authenticated' not in st.session_state or not st.session_state['authenticated']:
     # User is not authenticated; show the authentication button
-    auth_url = SpotifyOAuth(
-        client_id=st.secrets["SPOTIPY_CLIENT_ID"],
-        client_secret=st.secrets["SPOTIPY_CLIENT_SECRET"],
-        redirect_uri=st.secrets["SPOTIPY_REDIRECT_URI"],
-        scope="user-top-read",
-        cache_path=None,
-        state=st.session_state['oauth_state']
-    ).get_authorize_url()
+    auth_url = create_spotify_oauth(st.session_state['oauth_state']).get_authorize_url()
     st.markdown(f"""
     <a href="{auth_url}" target="_self"><button>Authenticate to Spotify</button></a>
     """, unsafe_allow_html=True)
@@ -380,6 +376,7 @@ else:
             st.success("Access token refreshed successfully.")
         else:
             st.error("Failed to refresh access token. Please re-authenticate.")
+            # Clear authentication state
             st.session_state.pop('authenticated', None)
             st.session_state.pop('access_token', None)
             st.session_state.pop('refresh_token', None)
