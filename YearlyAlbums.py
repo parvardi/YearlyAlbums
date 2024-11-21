@@ -31,8 +31,10 @@ max_albums_per_month = st.slider(
 # Spotify OAuth Setup
 # -------------------------------
 
-# Function to create SpotifyOAuth object
 def create_spotify_oauth():
+    """
+    Create and return a SpotifyOAuth object using credentials from st.secrets.
+    """
     return SpotifyOAuth(
         client_id=st.secrets["SPOTIPY_CLIENT_ID"],
         client_secret=st.secrets["SPOTIPY_CLIENT_SECRET"],
@@ -41,7 +43,7 @@ def create_spotify_oauth():
         cache_path=None  # Disable cache to manage tokens manually
     )
 
-# Create a SpotifyOAuth object globally
+# Initialize SpotifyOAuth globally
 sp_oauth = create_spotify_oauth()
 
 # -------------------------------
@@ -71,6 +73,9 @@ sp = spotipy.Spotify(
 
 @st.cache_data(ttl=0)
 def get_top_albums(token):
+    """
+    Fetch the user's top albums from Spotify using the provided access token.
+    """
     try:
         # Create a Spotify client with the token
         sp_client = spotipy.Spotify(auth=token)
@@ -145,6 +150,9 @@ def get_top_albums(token):
         return {}
 
 def overlay_text_on_image(img, album_name, artist_name):
+    """
+    Overlay album name and artist name text onto the album image.
+    """
     img = img.convert("RGBA")
     txt = Image.new("RGBA", img.size, (255, 255, 255, 0))
     draw = ImageDraw.Draw(txt)
@@ -178,6 +186,9 @@ def overlay_text_on_image(img, album_name, artist_name):
     return combined
 
 def create_composite_image(albums_by_month, max_albums_per_month):
+    """
+    Create a composite image of all top albums grouped by month.
+    """
     image_size = (300, 300)
     margin = 10
     padding_top = 50  # Space for month labels
@@ -245,7 +256,7 @@ def handle_auth():
             st.session_state['token_info'] = token_info
             st.session_state['authenticated'] = True
             # Clear the query params to clean up the URL
-            st.experimental_set_query_params()  # Optional: You can also replace this if Streamlit provides a new method
+            st.experimental_set_query_params()
             return token_info
         except Exception as e:
             st.error(f"Failed to obtain access token: {e}")
