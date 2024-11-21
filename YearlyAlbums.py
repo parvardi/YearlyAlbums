@@ -8,6 +8,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from io import BytesIO
+import uuid  # For generating a unique state parameter
 
 # -------------------------------
 # Configuration and Initialization
@@ -31,7 +32,7 @@ max_albums_per_month = st.slider(
 # Spotify OAuth Setup
 # -------------------------------
 
-def create_spotify_oauth():
+def create_spotify_oauth(state):
     """
     Create and return a SpotifyOAuth object using credentials from st.secrets.
     """
@@ -40,11 +41,16 @@ def create_spotify_oauth():
         client_secret=st.secrets["SPOTIPY_CLIENT_SECRET"],
         redirect_uri=st.secrets["SPOTIPY_REDIRECT_URI"],
         scope="user-top-read",
-        cache_path=None  # Disable cache to manage tokens manually
+        cache_path=None,  # Disable cache to manage tokens manually
+        state=state  # Pass the state parameter for security
     )
 
-# Initialize SpotifyOAuth globally
-sp_oauth = create_spotify_oauth()
+# Generate a unique state parameter if not already set
+if 'oauth_state' not in st.session_state:
+    st.session_state['oauth_state'] = str(uuid.uuid4())
+
+# Initialize SpotifyOAuth globally with the state
+sp_oauth = create_spotify_oauth(st.session_state['oauth_state'])
 
 # -------------------------------
 # Retry and Session Configuration
@@ -251,12 +257,19 @@ def handle_auth():
 
     if 'code' in query_params:
         code = query_params['code'][0]
+        received_state = query_params.get('state', [None])[0]
+
+        # Verify the state parameter to prevent CSRF attacks
+        if received_state != st.session_state.get('oauth_state'):
+            st.error("State mismatch. Potential CSRF attack detected.")
+            return None
+
         try:
-            # Explicitly set as_dict=True to obtain token information as a dictionary
+            # Exchange the authorization code for an access token
             token_info = sp_oauth.get_access_token(code, as_dict=True)
             st.session_state['token_info'] = token_info
             st.session_state['authenticated'] = True
-            # Clear the query params to prevent reusing the same code
+            # Clear the query params to prevent code reuse
             st.experimental_set_query_params()
             # Rerun the app to update the UI without the query params
             st.experimental_rerun()
