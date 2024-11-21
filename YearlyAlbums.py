@@ -41,7 +41,7 @@ def create_spotify_oauth():
         cache_path=None  # Disable cache to manage tokens manually
     )
 
-# Create a SpotifyOAuth object
+# Create a SpotifyOAuth object globally
 sp_oauth = create_spotify_oauth()
 
 # -------------------------------
@@ -236,7 +236,7 @@ def handle_auth():
     exchanging it for an access token, and storing it in session state.
     """
     # Get the query parameters from the URL
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params  # Updated from st.experimental_get_query_params()
 
     if 'code' in query_params:
         code = query_params['code'][0]
@@ -245,7 +245,7 @@ def handle_auth():
             st.session_state['token_info'] = token_info
             st.session_state['authenticated'] = True
             # Clear the query params to clean up the URL
-            st.experimental_set_query_params()
+            st.experimental_set_query_params()  # Optional: You can also replace this if Streamlit provides a new method
             return token_info
         except Exception as e:
             st.error(f"Failed to obtain access token: {e}")
