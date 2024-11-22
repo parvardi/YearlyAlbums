@@ -49,7 +49,7 @@ def get_url_parameters():
     """
     Retrieve URL query parameters using the updated st.query_params.
     """
-    return st.query_params()
+    return st.query_params
 #    return st.experimental_get_query_params()
 
 def authorize():
