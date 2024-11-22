@@ -49,7 +49,7 @@ def get_url_parameters():
     """
     Retrieve URL query parameters using the updated st.query_params.
     """
-    return st.query_params
+    return st.experimental_get_query_params()
 
 def authorize():
     """
@@ -64,12 +64,22 @@ def get_token():
     """
     params = get_url_parameters()
     code = params.get('code')
+    state = params.get('state')
+    
     if code:
         code = code[0]
+        received_state = state[0] if state else None
+        stored_state = st.session_state['spotify_cache'].get('state')
+        
+        if received_state != stored_state:
+            st.error("State parameter mismatch. Potential CSRF attack detected.")
+            st.session_state['spotify_cache'] = {}
+            authorize()
+            st.stop()
+        
         try:
             # Exchange code for token
             token_info = sp_oauth.get_access_token(code)
-            # Save token info to session state
             if isinstance(token_info, str):
                 # If a string is returned, parse it into a dict
                 token_info = {'access_token': token_info}
@@ -93,7 +103,7 @@ def refresh_token():
         st.session_state['spotify_cache'] = token_info
     except Exception as e:
         st.error(f"Failed to refresh token: {e}")
-        st.session_state['spotify_cache'] = None
+        st.session_state['spotify_cache'] = {}
 
 def clear_query_params():
     """
