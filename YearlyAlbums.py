@@ -1,20 +1,47 @@
+import os
 import streamlit as st
+from dotenv import load_dotenv
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import defaultdict
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from io import BytesIO
-import uuid  # For generating a unique state parameter
+import base64
 
-# -------------------------------
-# Configuration and Initialization
-# -------------------------------
+# Load environment variables
+load_dotenv()
 
-# Initialize Streamlit App
+# Set up Spotify authentication using Spotipy
+sp_oauth = SpotifyOAuth(
+    client_id=os.getenv("SPOTIPY_CLIENT_ID"),
+    client_secret=os.getenv("SPOTIPY_CLIENT_SECRET"),
+    redirect_uri=os.getenv("SPOTIPY_REDIRECT_URI"),
+    scope="user-top-read",
+    cache_path=None
+)
+
+# Configure retries and increased timeout for Spotipy
+session = requests.Session()
+retries = Retry(
+    total=5,  # Retry up to 5 times
+    backoff_factor=0.5,  # Exponential backoff: 0.5s, 1s, 2s, etc.
+    status_forcelist=[500, 502, 503, 504],  # Retry for server errors
+)
+adapter = HTTPAdapter(max_retries=retries)
+session.mount('https://', adapter)
+
+# Create a Spotipy object with the custom session and timeout
+sp = spotipy.Spotify(
+    auth_manager=sp_oauth,
+    requests_timeout=30,  # Increased timeout to 30 seconds
+    requests_session=session,
+)
+
+# Streamlit App UI
 st.set_page_config(layout="wide")
 st.title("Spotify Top Albums of the Year")
 st.write("Find your top Spotify albums released between December 2023 and December 2024.")
@@ -28,49 +55,10 @@ max_albums_per_month = st.slider(
     step=1
 )
 
-# -------------------------------
-# Spotify OAuth Setup
-# -------------------------------
-
-def create_spotify_oauth(state):
-    """
-    Create and return a SpotifyOAuth object using credentials from st.secrets.
-    """
-    return SpotifyOAuth(
-        client_id=st.secrets["SPOTIPY_CLIENT_ID"],
-        client_secret=st.secrets["SPOTIPY_CLIENT_SECRET"],
-        redirect_uri=st.secrets["SPOTIPY_REDIRECT_URI"],
-        scope="user-top-read",
-        cache_path=None,  # Disable cache to manage tokens manually
-        state=state  # Pass the state parameter for security
-    )
-
-# -------------------------------
-# Retry and Session Configuration
-# -------------------------------
-
-# Configure retries and increased timeout for Spotipy
-session = requests.Session()
-retries = Retry(
-    total=5,  # Retry up to 5 times
-    backoff_factor=0.5,  # Exponential backoff: 0.5s, 1s, 2s, etc.
-    status_forcelist=[500, 502, 503, 504],  # Retry for server errors
-)
-adapter = HTTPAdapter(max_retries=retries)
-session.mount('https://', adapter)
-
-# -------------------------------
-# Helper Functions
-# -------------------------------
-
+# Function to get top albums
 @st.cache_data(ttl=0)
-def get_top_albums(access_token):
-    """
-    Fetch the user's top albums from Spotify using the provided access token.
-    """
+def get_top_albums():
     try:
-        # Create a Spotify client with the token
-        sp_client = spotipy.Spotify(auth=access_token)
         top_albums = defaultdict(list)
         current_year = datetime.now().year
         seen_albums = set()
@@ -80,7 +68,7 @@ def get_top_albums(access_token):
 
         while True:
             # Fetch top tracks from Spotify API
-            top_tracks = sp_client.current_user_top_tracks(limit=50, offset=offset, time_range="long_term")
+            top_tracks = sp.current_user_top_tracks(limit=50, offset=offset, time_range="long_term")
             all_tracks.extend(top_tracks['items'])
             if len(top_tracks['items']) < 50:
                 break
@@ -111,7 +99,7 @@ def get_top_albums(access_token):
                     raise ValueError(f"Invalid year: {played_at.year}")
 
             except ValueError as e:
-                st.error(f"Error parsing release date '{release_date}': {e}")
+                print(f"Error parsing release date '{release_date}': {e}")
                 continue
 
             if (played_at.year == current_year) or (played_at.year == current_year - 1 and played_at.month == 12):
@@ -124,7 +112,6 @@ def get_top_albums(access_token):
                     })
                     seen_albums.add(album_name)
 
-        # Define the order of months
         months = []
         months.append(datetime(current_year - 1, 12, 1).strftime("%m/%y"))
         for month_num in range(1, 13):
@@ -142,9 +129,6 @@ def get_top_albums(access_token):
         return {}
 
 def overlay_text_on_image(img, album_name, artist_name):
-    """
-    Overlay album name and artist name text onto the album image.
-    """
     img = img.convert("RGBA")
     txt = Image.new("RGBA", img.size, (255, 255, 255, 0))
     draw = ImageDraw.Draw(txt)
@@ -178,9 +162,6 @@ def overlay_text_on_image(img, album_name, artist_name):
     return combined
 
 def create_composite_image(albums_by_month, max_albums_per_month):
-    """
-    Create a composite image of all top albums grouped by month.
-    """
     image_size = (300, 300)
     margin = 10
     padding_top = 50  # Space for month labels
@@ -229,172 +210,19 @@ def create_composite_image(albums_by_month, max_albums_per_month):
 
     return composite_image
 
-# -------------------------------
-# OAuth Callback Handling
-# -------------------------------
-
-def handle_auth():
-    """
-    Handle the OAuth callback by extracting the authorization code from the URL,
-    exchanging it for an access token, and storing it in session state.
-    """
-    # Get the query parameters from the URL
-    query_params = st.query_params  # Updated from st.experimental_get_query_params()
-
-    if 'code' in query_params:
-        code = query_params['code'][0]
-        received_state = query_params.get('state', [None])[0]
-
-        # Debug: Display stored and received state
-        st.write(f"**Stored state:** {st.session_state.get('oauth_state')}")
-        st.write(f"**Received state:** {received_state}")
-
-        # Verify the state parameter to prevent CSRF attacks
-        if received_state != st.session_state.get('oauth_state'):
-            st.error("State mismatch. Potential CSRF attack detected.")
-            return None
-
-        try:
-            # Manually exchange the authorization code for access and refresh tokens
-            token_url = 'https://accounts.spotify.com/api/token'
-            payload = {
-                'grant_type': 'authorization_code',
-                'code': code,
-                'redirect_uri': st.secrets["SPOTIPY_REDIRECT_URI"],
-                'client_id': st.secrets["SPOTIPY_CLIENT_ID"],
-                'client_secret': st.secrets["SPOTIPY_CLIENT_SECRET"],
-            }
-            headers = {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            }
-            response = requests.post(token_url, data=payload, headers=headers)
-            response.raise_for_status()  # Raise an exception for HTTP errors
-            token_info = response.json()
-
-            # Store token information in session state
-            st.session_state['access_token'] = token_info['access_token']
-            st.session_state['refresh_token'] = token_info.get('refresh_token')
-            st.session_state['expires_at'] = datetime.now() + timedelta(seconds=token_info['expires_in'])
-            st.session_state['authenticated'] = True
-
-            # Clear the query params to prevent code reuse
-            st.experimental_set_query_params()
-            # Rerun the app to update the UI without the query params
-            st.experimental_rerun()
-
-            return token_info
-        except requests.exceptions.HTTPError as http_err:
-            st.error(f"HTTP error occurred during token exchange: {http_err}")
-            return None
-        except Exception as e:
-            st.error(f"Failed to obtain access token: {e}")
-            return None
-    elif 'error' in query_params:
-        error_msg = query_params['error'][0]
-        st.error(f"Authentication failed: {error_msg}")
-        return None
-    else:
-        return None
-
-# -------------------------------
-# Token Refreshing Function
-# -------------------------------
-
-def refresh_access_token(refresh_token):
-    """
-    Refresh the access token using the refresh token.
-    """
-    try:
-        token_url = 'https://accounts.spotify.com/api/token'
-        payload = {
-            'grant_type': 'refresh_token',
-            'refresh_token': refresh_token,
-            'client_id': st.secrets["SPOTIPY_CLIENT_ID"],
-            'client_secret': st.secrets["SPOTIPY_CLIENT_SECRET"],
-        }
-        headers = {
-            'Content-Type': 'application/x-www-form-urlencoded'
-        }
-        response = requests.post(token_url, data=payload, headers=headers)
-        response.raise_for_status()
-        token_info = response.json()
-
-        # Update token information in session state
-        st.session_state['access_token'] = token_info['access_token']
-        st.session_state['expires_at'] = datetime.now() + timedelta(seconds=token_info['expires_in'])
-
-        # Spotify may or may not return a new refresh token
-        if 'refresh_token' in token_info:
-            st.session_state['refresh_token'] = token_info['refresh_token']
-
-        return token_info['access_token']
-    except requests.exceptions.HTTPError as http_err:
-        st.error(f"HTTP error occurred during token refresh: {http_err}")
-        return None
-    except Exception as e:
-        st.error(f"Failed to refresh access token: {e}")
-        return None
-
-# -------------------------------
-# Main Authentication Logic
-# -------------------------------
-
-# Initialize 'oauth_state' if not present
-if 'oauth_state' not in st.session_state:
-    st.session_state['oauth_state'] = str(uuid.uuid4())
-
-# Handle OAuth callback if present
-handle_auth()
-
-# Check if the user is already authenticated
-if 'authenticated' not in st.session_state or not st.session_state['authenticated']:
-    # User is not authenticated; show the authentication button
-    auth_url = create_spotify_oauth(st.session_state['oauth_state']).get_authorize_url()
-    st.markdown(f"""
-    <a href="{auth_url}" target="_self"><button>Authenticate to Spotify</button></a>
-    """, unsafe_allow_html=True)
-else:
-    # User is authenticated
-    user_name = st.session_state.get('user_name', 'User')
-    if 'user_name' not in st.session_state:
-        try:
-            # Create a Spotify client with the obtained token
-            sp_client = spotipy.Spotify(auth=st.session_state['access_token'])
-            user = sp_client.current_user()
-            st.session_state['user_name'] = user['display_name']
-            st.success(f"Authenticated as {user['display_name']}")
-        except Exception as e:
-            st.error(f"Error fetching user data: {e}")
-    else:
-        st.success(f"Authenticated as {user_name}")
-
-    # Check if the access token is expired
-    if datetime.now() >= st.session_state['expires_at']:
-        st.info("Access token has expired. Refreshing...")
-        new_access_token = refresh_access_token(st.session_state.get('refresh_token'))
-        if new_access_token:
-            st.success("Access token refreshed successfully.")
-        else:
-            st.error("Failed to refresh access token. Please re-authenticate.")
-            # Clear authentication state
-            st.session_state.pop('authenticated', None)
-            st.session_state.pop('access_token', None)
-            st.session_state.pop('refresh_token', None)
-            st.session_state.pop('expires_at', None)
-            st.experimental_rerun()
+# Authenticate to Spotify
+if st.button("Authenticate to Spotify") or 'authenticated' in st.session_state:
+    if 'authenticated' not in st.session_state:
+        # Get the current user
+        user = sp.current_user()
+        st.session_state['authenticated'] = True
+        st.session_state['user_name'] = user['display_name']
+        st.success(f"Authenticated as {user['display_name']}")
 
     # Fetch top albums if not already fetched
     if 'top_albums' not in st.session_state:
-        access_token = st.session_state.get('access_token')
-        if access_token:
-            try:
-                # Use the access token to fetch top albums
-                top_albums = get_top_albums(access_token)
-                st.session_state['top_albums'] = top_albums
-            except Exception as e:
-                st.error(f"Error fetching top albums: {e}")
-        else:
-            st.error("No access token available.")
+        top_albums = get_top_albums()
+        st.session_state['top_albums'] = top_albums
     else:
         top_albums = st.session_state['top_albums']
 
@@ -419,18 +247,14 @@ else:
                     image_url = album_info['image_url']
 
                     if image_url:
-                        try:
-                            response = requests.get(image_url)
-                            img = Image.open(BytesIO(response.content))
-                            # Resize image to fit the column
-                            img = img.resize((image_width, image_width))
-                            # Overlay text
-                            img_with_text = overlay_text_on_image(img, album_name, artist_name)
-                        except Exception as e:
-                            st.error(f"Error loading image for album '{album_name}': {e}")
-                            img_with_text = Image.new("RGB", (image_width, image_width), color='gray')
+                        response = requests.get(image_url)
+                        img = Image.open(BytesIO(response.content))
+                        # Resize image to fit the column
+                        img = img.resize((image_width, image_width))
+                        # Overlay text
+                        img_with_text = overlay_text_on_image(img, album_name, artist_name)
                     else:
-                        img_with_text = Image.new("RGB", (image_width, image_width), color='gray')
+                        img_with_text = Image.new("RGB", (300, 300), color='gray')
 
                     with cols[idx]:
                         st.image(img_with_text, use_container_width=True)
@@ -448,15 +272,12 @@ else:
 
     if albums_by_month:
         if 'byte_im' not in st.session_state:
-            try:
-                composite_image = create_composite_image(albums_by_month, max_albums_per_month)
+            composite_image = create_composite_image(albums_by_month, max_albums_per_month)
 
-                buf = BytesIO()
-                composite_image.save(buf, format="PNG")
-                byte_im = buf.getvalue()
-                st.session_state['byte_im'] = byte_im
-            except Exception as e:
-                st.error(f"Error creating composite image: {e}")
+            buf = BytesIO()
+            composite_image.save(buf, format="PNG")
+            byte_im = buf.getvalue()
+            st.session_state['byte_im'] = byte_im
         else:
             byte_im = st.session_state['byte_im']
 
@@ -467,3 +288,5 @@ else:
             file_name="top_albums.png",
             mime="image/png"
         )
+else:
+    st.warning("Please authenticate to Spotify first.")
