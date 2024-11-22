@@ -10,34 +10,24 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from io import BytesIO
 import base64
+import urllib.parse
 
-# Set up Spotify authentication using Spotipy
+# ---------------------------- Configuration ----------------------------
+
+# Define Spotify OAuth Scope
+SCOPE = "user-top-read"
+
+# Initialize SpotifyOAuth with appropriate parameters
 sp_oauth = SpotifyOAuth(
     client_id=os.getenv("SPOTIPY_CLIENT_ID"),
     client_secret=os.getenv("SPOTIPY_CLIENT_SECRET"),
     redirect_uri=os.getenv("SPOTIPY_REDIRECT_URI"),
-    scope="user-top-read",
-    cache_path=None
+    scope=SCOPE,
+    cache_path=None  # Disable Spotipy's internal cache
 )
 
-# Configure retries and increased timeout for Spotipy
-session = requests.Session()
-retries = Retry(
-    total=5,  # Retry up to 5 times
-    backoff_factor=0.5,  # Exponential backoff: 0.5s, 1s, 2s, etc.
-    status_forcelist=[500, 502, 503, 504],  # Retry for server errors
-)
-adapter = HTTPAdapter(max_retries=retries)
-session.mount('https://', adapter)
+# ---------------------------- Streamlit App UI ----------------------------
 
-# Create a Spotipy object with the custom session and timeout
-sp = spotipy.Spotify(
-    auth_manager=sp_oauth,
-    requests_timeout=30,  # Increased timeout to 30 seconds
-    requests_session=session,
-)
-
-# Streamlit App UI
 st.set_page_config(layout="wide")
 st.title("Spotify Top Albums of the Year")
 st.write("Find your top Spotify albums released between December 2023 and December 2024.")
@@ -51,9 +41,31 @@ max_albums_per_month = st.slider(
     step=1
 )
 
-# Function to get top albums
+# ---------------------------- OAuth Handling ----------------------------
+
+def get_authorization_url():
+    auth_url = sp_oauth.get_authorize_url()
+    return auth_url
+
+def get_token_from_code(code):
+    token_info = sp_oauth.get_access_token(code)
+    return token_info
+
+# Parse query parameters to get the authorization code
+query_params = st.query_params  # Updated from st.experimental_get_query_params()
+code = query_params.get("code")
+
+# Initialize session state variables if they don't exist
+if 'authenticated' not in st.session_state:
+    st.session_state['authenticated'] = False
+if 'token_info' not in st.session_state:
+    st.session_state['token_info'] = None
+
+# ---------------------------- Function Definitions ----------------------------
+
+# Function to get top albums (unchanged)
 @st.cache_data(ttl=0)
-def get_top_albums():
+def get_top_albums(sp):
     try:
         top_albums = defaultdict(list)
         current_year = datetime.now().year
@@ -206,18 +218,48 @@ def create_composite_image(albums_by_month, max_albums_per_month):
 
     return composite_image
 
-# Authenticate to Spotify
-if st.button("Authenticate to Spotify") or 'authenticated' in st.session_state:
-    if 'authenticated' not in st.session_state:
-        # Get the current user
-        user = sp.current_user()
+# ---------------------------- Authentication Flow ----------------------------
+
+def authenticate():
+    if not st.session_state['authenticated']:
+        auth_url = get_authorization_url()
+        st.markdown(f"[**Authenticate with Spotify**]({auth_url})")
+    else:
+        st.success(f"Authenticated as {st.session_state['user_name']}")
+
+# ---------------------------- Main Application Logic ----------------------------
+
+# Check if there's an authorization code in the URL
+if code and not st.session_state['authenticated']:
+    try:
+        token_info = get_token_from_code(code[0])
+        st.session_state['token_info'] = token_info
         st.session_state['authenticated'] = True
+
+        # Initialize Spotipy with the obtained token
+        sp = spotipy.Spotify(auth=token_info['access_token'])
+
+        # Get current user
+        user = sp.current_user()
         st.session_state['user_name'] = user['display_name']
         st.success(f"Authenticated as {user['display_name']}")
 
+    except Exception as e:
+        st.error(f"Authentication failed: {e}")
+else:
+    # If not authenticated, show the authenticate button
+    if not st.session_state['authenticated']:
+        authenticate()
+
+# If authenticated, proceed to fetch and display data
+if st.session_state['authenticated']:
+    # Initialize Spotipy with the token from session state
+    token_info = st.session_state['token_info']
+    sp = spotipy.Spotify(auth=token_info['access_token'])
+
     # Fetch top albums if not already fetched
     if 'top_albums' not in st.session_state:
-        top_albums = get_top_albums()
+        top_albums = get_top_albums(sp)
         st.session_state['top_albums'] = top_albums
     else:
         top_albums = st.session_state['top_albums']
@@ -284,5 +326,3 @@ if st.button("Authenticate to Spotify") or 'authenticated' in st.session_state:
             file_name="top_albums.png",
             mime="image/png"
         )
-else:
-    st.warning("Please authenticate to Spotify first.")
