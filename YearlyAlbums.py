@@ -13,8 +13,8 @@ from io import BytesIO
 import base64
 
 # Conditionally load .env for local development
-if os.path.exists(".env"):
-    load_dotenv()
+# if os.path.exists(".env"):
+#    load_dotenv()
 
 def get_env_variable(var_name):
     """Fetch environment variable or raise error if not found."""
