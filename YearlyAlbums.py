@@ -109,16 +109,7 @@ def clear_query_params():
     """
     Clear query parameters from the URL after processing.
     """
-    st.experimental_set_query_params()
-
-def logout():
-    """
-    Logout function to clear session state and revoke tokens.
-    """
-    st.session_state['spotify_cache'] = {}
-    st.experimental_set_query_params()
-    st.success("Logged out successfully!")
-    st.experimental_rerun()
+    st.set_query_params()
 
 # --------------------------
 # Initialize Spotify OAuth
@@ -170,10 +161,6 @@ max_albums_per_month = st.slider(
     value=5,
     step=1
 )
-
-# Optional: Add a logout button
-if st.button("Logout"):
-    logout()
 
 # --------------------------
 # Authentication Flow
