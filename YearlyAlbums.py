@@ -10,7 +10,6 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from io import BytesIO
-import secrets
 
 # --------------------------
 # Custom Cache Handler
@@ -47,9 +46,9 @@ def get_env_variable(var_name):
 
 def get_url_parameters():
     """
-    Retrieve URL query parameters using the updated st.query_params.
+    Retrieve URL query parameters using st.query_params.
     """
-    return st.experimental_get_query_params()
+    return st.query_params
 
 def authorize():
     """
@@ -109,16 +108,7 @@ def clear_query_params():
     """
     Clear query parameters from the URL after processing.
     """
-    st.experimental_set_query_params()
-
-def logout():
-    """
-    Logout function to clear session state and revoke tokens.
-    """
-    st.session_state['spotify_cache'] = {}
-    st.experimental_set_query_params()
-    st.success("Logged out successfully!")
-    st.experimental_rerun()
+    st.set_query_params()
 
 # --------------------------
 # Initialize Spotify OAuth
@@ -170,10 +160,6 @@ max_albums_per_month = st.slider(
     value=5,
     step=1
 )
-
-# Optional: Add a logout button
-if st.button("Logout"):
-    logout()
 
 # --------------------------
 # Authentication Flow
