@@ -9,8 +9,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from io import BytesIO
-import base64
-import urllib.parse
+import secrets
 
 # ---------------------------- Configuration ----------------------------
 
@@ -43,27 +42,35 @@ max_albums_per_month = st.slider(
 
 # ---------------------------- OAuth Handling ----------------------------
 
-def get_authorization_url():
-    auth_url = sp_oauth.get_authorize_url()
+def generate_state():
+    """Generate a random string for the state parameter."""
+    return secrets.token_urlsafe(16)
+
+def get_authorization_url(state):
+    """Generate the Spotify authorization URL with the given state."""
+    auth_url = sp_oauth.get_authorize_url(state=state)
     return auth_url
 
 def get_token_from_code(code):
-    token_info = sp_oauth.get_access_token(code)
+    """Exchange the authorization code for an access token."""
+    token_info = sp_oauth.get_access_token(code, as_dict=True)
     return token_info
 
-# Parse query parameters to get the authorization code
-query_params = st.query_params  # Updated from st.experimental_get_query_params()
+# Parse query parameters to get the authorization code and state
+query_params = st.query_params
 code = query_params.get("code")
+received_state = query_params.get("state")
 
 # Initialize session state variables if they don't exist
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
 if 'token_info' not in st.session_state:
     st.session_state['token_info'] = None
+if 'oauth_state' not in st.session_state:
+    st.session_state['oauth_state'] = None
 
 # ---------------------------- Function Definitions ----------------------------
 
-# Function to get top albums (unchanged)
 @st.cache_data(ttl=0)
 def get_top_albums(sp):
     try:
@@ -222,7 +229,9 @@ def create_composite_image(albums_by_month, max_albums_per_month):
 
 def authenticate():
     if not st.session_state['authenticated']:
-        auth_url = get_authorization_url()
+        state = generate_state()
+        st.session_state['oauth_state'] = state
+        auth_url = get_authorization_url(state)
         st.markdown(f"[**Authenticate with Spotify**]({auth_url})")
     else:
         st.success(f"Authenticated as {st.session_state['user_name']}")
@@ -232,18 +241,25 @@ def authenticate():
 # Check if there's an authorization code in the URL
 if code and not st.session_state['authenticated']:
     try:
-        token_info = get_token_from_code(code[0])
-        st.session_state['token_info'] = token_info
-        st.session_state['authenticated'] = True
+        # Verify state parameter
+        if received_state and st.session_state['oauth_state'] == received_state:
+            token_info = get_token_from_code(code[0])
+            st.session_state['token_info'] = token_info
+            st.session_state['authenticated'] = True
 
-        # Initialize Spotipy with the obtained token
-        sp = spotipy.Spotify(auth=token_info['access_token'])
+            # Initialize Spotipy with the obtained token
+            sp = spotipy.Spotify(auth=token_info['access_token'])
 
-        # Get current user
-        user = sp.current_user()
-        st.session_state['user_name'] = user['display_name']
-        st.success(f"Authenticated as {user['display_name']}")
+            # Get current user
+            user = sp.current_user()
+            st.session_state['user_name'] = user['display_name']
+            st.success(f"Authenticated as {user['display_name']}")
 
+            # Clear OAuth state
+            st.session_state['oauth_state'] = None
+
+        else:
+            st.error("State parameter mismatch. Potential CSRF attack detected.")
     except Exception as e:
         st.error(f"Authentication failed: {e}")
 else:
