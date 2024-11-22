@@ -109,14 +109,14 @@ def clear_query_params():
     """
     Clear query parameters from the URL after processing.
     """
-    st.set_query_params()
+    st.query_params()
 
 def logout():
     """
     Logout function to clear session state and revoke tokens.
     """
     st.session_state['spotify_cache'] = {}
-    st.set_query_params()
+    st.query_params()
     st.success("Logged out successfully!")
     st.experimental_rerun()
 
