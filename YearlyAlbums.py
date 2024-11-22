@@ -238,6 +238,12 @@ def authenticate():
 
 # ---------------------------- Main Application Logic ----------------------------
 
+# Debugging: Display stored state and received state
+if st.checkbox("Show Debug Information"):
+    st.write("### Debug Information")
+    st.write(f"Stored State: {st.session_state.get('oauth_state')}")
+    st.write(f"Received State: {received_state}")
+
 # Check if there's an authorization code in the URL
 if code and not st.session_state['authenticated']:
     try:
@@ -260,8 +266,14 @@ if code and not st.session_state['authenticated']:
 
         else:
             st.error("State parameter mismatch. Potential CSRF attack detected.")
+            # Optional: Reset oauth_state to prevent repeated errors
+            st.session_state['oauth_state'] = None
     except Exception as e:
         st.error(f"Authentication failed: {e}")
+        # Optional: Reset authentication state
+        st.session_state['authenticated'] = False
+        st.session_state['token_info'] = None
+        st.session_state['oauth_state'] = None
 else:
     # If not authenticated, show the authenticate button
     if not st.session_state['authenticated']:
@@ -275,8 +287,9 @@ if st.session_state['authenticated']:
 
     # Fetch top albums if not already fetched
     if 'top_albums' not in st.session_state:
-        top_albums = get_top_albums(sp)
-        st.session_state['top_albums'] = top_albums
+        with st.spinner("Fetching your top albums..."):
+            top_albums = get_top_albums(sp)
+            st.session_state['top_albums'] = top_albums
     else:
         top_albums = st.session_state['top_albums']
 
@@ -326,12 +339,13 @@ if st.session_state['authenticated']:
 
     if albums_by_month:
         if 'byte_im' not in st.session_state:
-            composite_image = create_composite_image(albums_by_month, max_albums_per_month)
+            with st.spinner("Creating composite image..."):
+                composite_image = create_composite_image(albums_by_month, max_albums_per_month)
 
-            buf = BytesIO()
-            composite_image.save(buf, format="PNG")
-            byte_im = buf.getvalue()
-            st.session_state['byte_im'] = byte_im
+                buf = BytesIO()
+                composite_image.save(buf, format="PNG")
+                byte_im = buf.getvalue()
+                st.session_state['byte_im'] = byte_im
         else:
             byte_im = st.session_state['byte_im']
 
