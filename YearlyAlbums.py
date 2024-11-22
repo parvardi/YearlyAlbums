@@ -109,7 +109,8 @@ def clear_query_params():
     """
     Clear query parameters from the URL after processing.
     """
-    st.experimental_set_query_params()
+    st.query_params()
+    # st.experimental_set_query_params()
 
 def logout():
     """
