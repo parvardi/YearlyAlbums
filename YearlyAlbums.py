@@ -18,6 +18,10 @@ from urllib.parse import urlencode, urlparse, parse_qs
 # --------------------------
 
 class StreamlitCacheHandler(CacheHandler):
+    """
+    Custom cache handler to store and retrieve token information
+    using Streamlit's session state.
+    """
     def __init__(self):
         if 'token_info' not in st.session_state:
             st.session_state['token_info'] = None
@@ -33,7 +37,9 @@ class StreamlitCacheHandler(CacheHandler):
 # --------------------------
 
 def get_env_variable(var_name):
-    """Fetch environment variable or raise error if not found."""
+    """
+    Fetch environment variable or display error and stop the app.
+    """
     value = os.getenv(var_name)
     if not value:
         st.error(f"Environment variable '{var_name}' not set.")
@@ -41,16 +47,22 @@ def get_env_variable(var_name):
     return value
 
 def get_url_parameters():
-    """Retrieve URL query parameters using the updated st.query_params."""
+    """
+    Retrieve URL query parameters using the updated st.query_params.
+    """
     return st.query_params
 
 def authorize():
-    """Generate and display the Spotify authorization URL."""
+    """
+    Generate and display the Spotify authorization URL.
+    """
     auth_url = sp_oauth.get_authorize_url()
     st.markdown(f'[Authorize with Spotify]({auth_url})', unsafe_allow_html=True)
 
 def get_token():
-    """Exchange authorization code for access token."""
+    """
+    Exchange authorization code for access token.
+    """
     params = get_url_parameters()
     code = params.get('code')
     if code:
@@ -64,13 +76,21 @@ def get_token():
     return None
 
 def refresh_token():
-    """Refresh the Spotify access token if expired."""
+    """
+    Refresh the Spotify access token if expired.
+    """
     try:
         token_info = sp.auth_manager.refresh_access_token(st.session_state['token_info']['refresh_token'])
         st.session_state['token_info'] = token_info
     except Exception as e:
         st.error(f"Failed to refresh token: {e}")
         st.session_state['token_info'] = None
+
+def clear_query_params():
+    """
+    Clear query parameters from the URL after processing.
+    """
+    st.experimental_set_query_params()
 
 # --------------------------
 # Initialize Spotify OAuth
@@ -86,7 +106,7 @@ sp_oauth = SpotifyOAuth(
     redirect_uri=get_env_variable("SPOTIPY_REDIRECT_URI"),
     scope="user-top-read",
     cache_handler=cache_handler,
-    show_dialog=True  # Force the authorization dialog every time (useful for development)
+    show_dialog=True  # Set to False in production to reuse existing tokens
 )
 
 # Configure retries and increased timeout for Spotipy
@@ -133,6 +153,8 @@ if st.session_state['token_info'] is None:
     if token_info:
         st.session_state['token_info'] = token_info
         st.success("Successfully authenticated with Spotify!")
+        # Clear the query parameters to prevent reuse of the code
+        clear_query_params()
     else:
         authorize()
         st.stop()
@@ -236,6 +258,9 @@ def get_top_albums():
 # --------------------------
 
 def overlay_text_on_image(img, album_name, artist_name):
+    """
+    Overlay album name and artist name on the album cover image.
+    """
     img = img.convert("RGBA")
     txt = Image.new("RGBA", img.size, (255, 255, 255, 0))
     draw = ImageDraw.Draw(txt)
@@ -269,6 +294,9 @@ def overlay_text_on_image(img, album_name, artist_name):
     return combined
 
 def create_composite_image(albums_by_month, max_albums_per_month):
+    """
+    Create a composite image of top albums grouped by month.
+    """
     image_size = (300, 300)
     margin = 10
     padding_top = 50  # Space for month labels
