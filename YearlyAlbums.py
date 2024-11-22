@@ -18,18 +18,18 @@ import secrets
 
 class StreamlitCacheHandler(CacheHandler):
     """
-    Custom cache handler to store and retrieve token information
-    using Streamlit's session state.
+    Custom cache handler to store and retrieve the entire cache
+    (token_info and state) using Streamlit's session state.
     """
     def __init__(self):
-        if 'token_info' not in st.session_state:
-            st.session_state['token_info'] = None
-
+        if 'spotify_cache' not in st.session_state:
+            st.session_state['spotify_cache'] = {}
+    
     def get_cached_token(self):
-        return st.session_state.get('token_info', None)
-
+        return st.session_state.get('spotify_cache', None)
+    
     def save_token_to_cache(self, token_info):
-        st.session_state['token_info'] = token_info
+        st.session_state['spotify_cache'] = token_info
 
 # --------------------------
 # Helper Functions
@@ -73,7 +73,7 @@ def get_token():
             if isinstance(token_info, str):
                 # If a string is returned, parse it into a dict
                 token_info = {'access_token': token_info}
-            st.session_state['token_info'] = token_info
+            st.session_state['spotify_cache'] = token_info
             st.success("Successfully authenticated with Spotify!")
             # Clear query parameters to prevent reuse of the code
             clear_query_params()
@@ -89,11 +89,11 @@ def refresh_token():
     Refresh the Spotify access token if expired.
     """
     try:
-        token_info = sp.auth_manager.refresh_access_token(st.session_state['token_info']['refresh_token'])
-        st.session_state['token_info'] = token_info
+        token_info = sp.auth_manager.refresh_access_token(st.session_state['spotify_cache']['refresh_token'])
+        st.session_state['spotify_cache'] = token_info
     except Exception as e:
         st.error(f"Failed to refresh token: {e}")
-        st.session_state['token_info'] = None
+        st.session_state['spotify_cache'] = None
 
 def clear_query_params():
     """
@@ -105,7 +105,7 @@ def logout():
     """
     Logout function to clear session state and revoke tokens.
     """
-    st.session_state['token_info'] = None
+    st.session_state['spotify_cache'] = {}
     st.experimental_set_query_params()
     st.success("Logged out successfully!")
     st.experimental_rerun()
@@ -170,24 +170,28 @@ if st.button("Logout"):
 # --------------------------
 
 # Check if the user is authenticated
-if st.session_state['token_info'] is None:
+if not st.session_state['spotify_cache']:
     get_token()
 else:
     # Check if token is expired
-    if sp.auth_manager.is_token_expired(st.session_state['token_info']):
+    if sp.auth_manager.is_token_expired(st.session_state['spotify_cache']):
         refresh_token()
-        if st.session_state['token_info'] is None:
+        if not st.session_state['spotify_cache']:
             get_token()
 
 # Set the token for Spotipy
-sp.auth_manager.token_info = st.session_state['token_info']
+if st.session_state['spotify_cache']:
+    sp.auth_manager.token_info = st.session_state['spotify_cache']
 
-# Now you can safely call Spotify API methods
-try:
-    user = sp.current_user()
-    st.write(f"Authenticated as **{user['display_name']}**")
-except Exception as e:
-    st.error(f"Error fetching user info: {e}")
+    # Now you can safely call Spotify API methods
+    try:
+        user = sp.current_user()
+        st.write(f"Authenticated as **{user['display_name']}**")
+    except Exception as e:
+        st.error(f"Error fetching user info: {e}")
+        st.stop()
+else:
+    st.error("Authentication failed.")
     st.stop()
 
 # --------------------------
