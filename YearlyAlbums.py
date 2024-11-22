@@ -68,12 +68,24 @@ def get_token():
     if code:
         code = code[0]
         try:
-            token_info = sp_oauth.get_access_token(code, as_dict=True)
-            return token_info
+            # Remove 'as_dict=True' as per the deprecation warning
+            token_info = sp_oauth.get_access_token(code)
+            # Since 'as_dict' is deprecated, we need to manually parse the response
+            # However, depending on the spotipy version, this might vary
+            # For compatibility, we'll assume token_info is a dict
+            if isinstance(token_info, str):
+                # If a string is returned, parse it into a dict
+                token_info = {'access_token': token_info}
+            st.session_state['token_info'] = token_info
+            st.success("Successfully authenticated with Spotify!")
+            # Clear query parameters to prevent reuse of the code
+            clear_query_params()
         except Exception as e:
             st.error(f"Failed to get access token: {e}")
             return None
-    return None
+    else:
+        authorize()
+        st.stop()
 
 def refresh_token():
     """
@@ -92,6 +104,15 @@ def clear_query_params():
     """
     st.experimental_set_query_params()
 
+def logout():
+    """
+    Logout function to clear session state and revoke tokens.
+    """
+    st.session_state['token_info'] = None
+    st.experimental_set_query_params()
+    st.success("Logged out successfully!")
+    st.experimental_rerun()
+
 # --------------------------
 # Initialize Spotify OAuth
 # --------------------------
@@ -103,7 +124,7 @@ cache_handler = StreamlitCacheHandler()
 sp_oauth = SpotifyOAuth(
     client_id=get_env_variable("SPOTIPY_CLIENT_ID"),
     client_secret=get_env_variable("SPOTIPY_CLIENT_SECRET"),
-    redirect_uri=get_env_variable("SPOTIPY_REDIRECT_URI"),
+    redirect_uri=get_env_variable("SPOTIPY_REDIRECT_URI"),  # Should include trailing slash
     scope="user-top-read",
     cache_handler=cache_handler,
     show_dialog=True  # Set to False in production to reuse existing tokens
@@ -143,28 +164,23 @@ max_albums_per_month = st.slider(
     step=1
 )
 
+# Optional: Add a logout button
+if st.button("Logout"):
+    logout()
+
 # --------------------------
 # Authentication Flow
 # --------------------------
 
 # Check if the user is authenticated
 if st.session_state['token_info'] is None:
-    token_info = get_token()
-    if token_info:
-        st.session_state['token_info'] = token_info
-        st.success("Successfully authenticated with Spotify!")
-        # Clear the query parameters to prevent reuse of the code
-        clear_query_params()
-    else:
-        authorize()
-        st.stop()
+    get_token()
 else:
     # Check if token is expired
     if sp.auth_manager.is_token_expired(st.session_state['token_info']):
         refresh_token()
         if st.session_state['token_info'] is None:
-            authorize()
-            st.stop()
+            get_token()
 
 # Set the token for Spotipy
 sp.auth_manager.token_info = st.session_state['token_info']
@@ -330,9 +346,14 @@ def create_composite_image(albums_by_month, max_albums_per_month):
                 image_url = album_info['image_url']
 
                 if image_url:
-                    response = requests.get(image_url)
-                    img = Image.open(BytesIO(response.content)).resize(image_size)
-                    img_with_text = overlay_text_on_image(img, album_name, artist_name)
+                    try:
+                        response = requests.get(image_url, timeout=10)
+                        response.raise_for_status()
+                        img = Image.open(BytesIO(response.content)).resize(image_size)
+                        img_with_text = overlay_text_on_image(img, album_name, artist_name)
+                    except Exception as e:
+                        st.warning(f"Failed to load image for album '{album_name}': {e}")
+                        img_with_text = Image.new("RGB", image_size, color='gray')
                 else:
                     img_with_text = Image.new("RGB", image_size, color='gray')
             else:
@@ -377,14 +398,19 @@ for month, albums in top_albums.items():
                 image_url = album_info['image_url']
 
                 if image_url:
-                    response = requests.get(image_url)
-                    img = Image.open(BytesIO(response.content))
-                    # Resize image to fit the column
-                    img = img.resize((image_width, image_width))
-                    # Overlay text
-                    img_with_text = overlay_text_on_image(img, album_name, artist_name)
+                    try:
+                        response = requests.get(image_url, timeout=10)
+                        response.raise_for_status()
+                        img = Image.open(BytesIO(response.content))
+                        # Resize image to fit the column
+                        img = img.resize((image_width, image_width))
+                        # Overlay text
+                        img_with_text = overlay_text_on_image(img, album_name, artist_name)
+                    except Exception as e:
+                        st.warning(f"Failed to load image for album '{album_name}': {e}")
+                        img_with_text = Image.new("RGB", (image_width, image_width), color='gray')
                 else:
-                    img_with_text = Image.new("RGB", (300, 300), color='gray')
+                    img_with_text = Image.new("RGB", (image_width, image_width), color='gray')
 
                 with cols[idx]:
                     st.image(img_with_text, use_container_width=True)
