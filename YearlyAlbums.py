@@ -12,8 +12,18 @@ from urllib3.util.retry import Retry
 from io import BytesIO
 import base64
 
-# Load environment variables
-load_dotenv()
+# Conditionally load .env for local development
+if os.path.exists(".env"):
+    load_dotenv()
+
+def get_env_variable(var_name):
+    """Fetch environment variable or raise error if not found."""
+    value = os.getenv(var_name)
+    if not value:
+        st.error(f"Environment variable '{var_name}' not set.")
+        st.stop()
+    return value
+
 
 # Set up Spotify authentication using Spotipy
 sp_oauth = SpotifyOAuth(
