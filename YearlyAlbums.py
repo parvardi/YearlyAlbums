@@ -168,24 +168,27 @@ sp = Spotify(
 )
 
 # --------------------------
+# Initialize Slider State in session_state
+# --------------------------
+if 'max_albums_per_month' not in st.session_state:
+    st.session_state['max_albums_per_month'] = 5  # Default value
+
+# --------------------------
 # Streamlit App UI
 # --------------------------
 
 st.title("Spotify Top Albums of the Year")
 st.write("Find your top Spotify albums released between December 2023 and December 2024.")
 
-# Add a slider for user input
+# Add a slider for user input, binding it to session_state
 max_albums_per_month = st.slider(
     "How many of your top albums do you want to see per month?",
     min_value=3,
     max_value=10,
-    value=5,
-    step=1
+    value=st.session_state['max_albums_per_month'],
+    step=1,
+    key='max_albums_per_month'  # Unique key for session_state binding
 )
-
-# Optional: Add a logout button
-# if st.button("Logout"):
-#     logout()
 
 # --------------------------
 # Authentication Flow
