@@ -118,8 +118,8 @@ def clear_query_params():
     """
     # st.set_query_params()
     # st.experimental_rerun()
-
-    st.experimental_set_query_params()
+    st.query_params = {}
+    # st.experimental_set_query_params()
 
 # def logout():
 #     """

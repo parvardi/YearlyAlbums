@@ -34,6 +34,7 @@ class StreamlitCacheHandler(CacheHandler):
         return st.session_state.get('spotify_cache', {})
     
     def save_token_to_cache(self, token_info):
+        # Use update to preserve existing keys like 'state'
         st.session_state['spotify_cache'].update(token_info)
 
 # --------------------------
@@ -62,6 +63,7 @@ def authorize():
     """
     auth_url = sp_oauth.get_authorize_url()
     st.markdown(f'[Authorize with Spotify]({auth_url})', unsafe_allow_html=True)
+    st.write("Current Spotify Cache after authorization URL generation:", st.session_state['spotify_cache'])
 
 def get_token():
     """
@@ -80,6 +82,8 @@ def get_token():
                 token_info = {'access_token': token_info}
             st.session_state['spotify_cache'] = token_info
             st.success("Successfully authenticated with Spotify!")
+            # Display updated cache
+            st.write("Spotify Cache after token exchange:", st.session_state['spotify_cache'])
             # Clear query parameters to prevent reuse of the code
             clear_query_params()
         except Exception as e:
@@ -104,7 +108,8 @@ def clear_query_params():
     """
     Clear query parameters from the URL after processing.
     """
-    st.query_params = {}
+    st.experimental_set_query_params()
+    st.experimental_rerun()
 
 # --------------------------
 # Initialize Spotify OAuth
