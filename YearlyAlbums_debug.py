@@ -1,21 +1,25 @@
 import logging
 logging.getLogger("streamlit").setLevel(logging.ERROR)
+
 # Ignore warnings
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 import os
 import streamlit as st
 
 # --------------------------
-# Hide Deprecation Warnings
+# Set Streamlit Page Configuration
+# --------------------------
+st.set_page_config(layout="wide")
+
+# --------------------------
+# Hide Deprecation Warnings via CSS
 # --------------------------
 hide_deprecation_warnings = """
     <style>
     /* Hide specific deprecation warning messages */
-    div[data-testid="stMarkdownContainer"] p:contains("Please replace st.experimental_get_query_params") {
-        display: none;
-    }
-    div[data-testid="stMarkdownContainer"] p:contains("Please replace st.experimental_set_query_params") {
+    div[data-testid="stMarkdownContainer"] p {
         display: none;
     }
     </style>
@@ -80,7 +84,8 @@ def authorize():
     """
     auth_url = sp_oauth.get_authorize_url()
     st.markdown(f'[Authorize with Spotify]({auth_url})', unsafe_allow_html=True)
-    st.write("Current Spotify Cache after authorization URL generation:", st.session_state['spotify_cache'])
+    # Optionally, remove the debug line if it causes layout issues
+    # st.write("Current Spotify Cache after authorization URL generation:", st.session_state['spotify_cache'])
 
 def get_token():
     """
@@ -99,8 +104,8 @@ def get_token():
                 token_info = {'access_token': token_info}
             st.session_state['spotify_cache'] = token_info
             st.success("Successfully authenticated with Spotify!")
-            # Display updated cache
-            st.write("Spotify Cache after token exchange:", st.session_state['spotify_cache'])
+            # Optionally, remove the debug line
+            # st.write("Spotify Cache after token exchange:", st.session_state['spotify_cache'])
             # Clear query parameters to prevent reuse of the code
             clear_query_params()
         except Exception as e:
@@ -166,7 +171,6 @@ sp = Spotify(
 # Streamlit App UI
 # --------------------------
 
-st.set_page_config(layout="wide")
 st.title("Spotify Top Albums of the Year")
 st.write("Find your top Spotify albums released between December 2023 and December 2024.")
 
