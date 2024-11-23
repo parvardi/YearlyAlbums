@@ -54,8 +54,8 @@ def get_url_parameters():
     """
     Retrieve URL query parameters using the updated st.query_params.
     """
-    # return st.query_params
-    return st.experimental_get_query_params()
+    return st.query_params
+    # return st.experimental_get_query_params()
 
 def authorize():
     """
@@ -115,7 +115,8 @@ def clear_query_params():
     """
     Clear query parameters from the URL after processing.
     """
-    st.experimental_set_query_params()
+    st.set_query_params()
+#    st.experimental_set_query_params()
 
 def logout():
     """
