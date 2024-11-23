@@ -17,7 +17,6 @@ from urllib3.util.retry import Retry
 from io import BytesIO
 import secrets
 
-
 # --------------------------
 # Custom Cache Handler
 # --------------------------
@@ -32,10 +31,10 @@ class StreamlitCacheHandler(CacheHandler):
             st.session_state['spotify_cache'] = {}
     
     def get_cached_token(self):
-        return st.session_state.get('spotify_cache', None)
+        return st.session_state.get('spotify_cache', {})
     
     def save_token_to_cache(self, token_info):
-        st.session_state['spotify_cache'] = token_info
+        st.session_state['spotify_cache'].update(token_info)
 
 # --------------------------
 # Helper Functions
@@ -53,10 +52,9 @@ def get_env_variable(var_name):
 
 def get_url_parameters():
     """
-    Retrieve URL query parameters using the updated st.query_params.
+    Retrieve URL query parameters using st.query_params.
     """
     return st.query_params
-    # return st.experimental_get_query_params()
 
 def authorize():
     """
@@ -71,19 +69,9 @@ def get_token():
     """
     params = get_url_parameters()
     code = params.get('code')
-    state = params.get('state')
     
     if code:
         code = code[0]
-        received_state = state[0] if state else None
-        stored_state = st.session_state['spotify_cache'].get('state')
-        
-        if received_state != stored_state:
-            st.error("State parameter mismatch. Potential CSRF attack detected.")
-            st.session_state['spotify_cache'] = {}
-            authorize()
-            st.stop()
-        
         try:
             # Exchange code for token
             token_info = sp_oauth.get_access_token(code)
@@ -116,20 +104,7 @@ def clear_query_params():
     """
     Clear query parameters from the URL after processing.
     """
-    # st.set_query_params()
-    # st.experimental_rerun()
     st.query_params = {}
-
-#    st.experimental_set_query_params()
-
-# def logout():
-#     """
-#     Logout function to clear session state and revoke tokens.
-#     """
-#     st.session_state['spotify_cache'] = {}
-#     st.experimental_set_query_params()
-#     st.success("Logged out successfully!")
-#     st.experimental_rerun()
 
 # --------------------------
 # Initialize Spotify OAuth
