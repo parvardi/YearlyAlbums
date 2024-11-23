@@ -12,6 +12,10 @@ from urllib3.util.retry import Retry
 from io import BytesIO
 import secrets
 
+# Ignore warnings
+import warnings
+warnings.filterwarnings("ignore")
+
 # --------------------------
 # Custom Cache Handler
 # --------------------------
