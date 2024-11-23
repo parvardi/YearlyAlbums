@@ -11,7 +11,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from io import BytesIO
 import secrets
-
+import logging
+logging.getLogger("streamlit").setLevel(logging.ERROR)
 # Ignore warnings
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -53,8 +54,8 @@ def get_url_parameters():
     """
     Retrieve URL query parameters using the updated st.query_params.
     """
-    return st.query_params
-#    return st.experimental_get_query_params()
+    # return st.query_params
+    return st.experimental_get_query_params()
 
 def authorize():
     """
