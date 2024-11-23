@@ -5,6 +5,23 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 import os
 import streamlit as st
+
+# --------------------------
+# Hide Deprecation Warnings
+# --------------------------
+hide_deprecation_warnings = """
+    <style>
+    /* Hide specific deprecation warning messages */
+    div[data-testid="stMarkdownContainer"] p:contains("Please replace st.experimental_get_query_params") {
+        display: none;
+    }
+    div[data-testid="stMarkdownContainer"] p:contains("Please replace st.experimental_set_query_params") {
+        display: none;
+    }
+    </style>
+    """
+st.markdown(hide_deprecation_warnings, unsafe_allow_html=True)
+
 from spotipy import Spotify
 from spotipy.oauth2 import SpotifyOAuth
 from spotipy.cache_handler import CacheHandler
@@ -53,9 +70,9 @@ def get_env_variable(var_name):
 
 def get_url_parameters():
     """
-    Retrieve URL query parameters using st.query_params.
+    Retrieve URL query parameters using st.experimental_get_query_params.
     """
-    return st.query_params
+    return st.experimental_get_query_params()
 
 def authorize():
     """
