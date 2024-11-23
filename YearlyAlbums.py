@@ -1,3 +1,8 @@
+import logging
+logging.getLogger("streamlit").setLevel(logging.ERROR)
+# Ignore warnings
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 import os
 import streamlit as st
 from spotipy import Spotify
@@ -11,11 +16,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from io import BytesIO
 import secrets
-import logging
-logging.getLogger("streamlit").setLevel(logging.ERROR)
-# Ignore warnings
-import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 
 # --------------------------
 # Custom Cache Handler
@@ -116,6 +117,8 @@ def clear_query_params():
     Clear query parameters from the URL after processing.
     """
     st.set_query_params()
+    st.experimental_rerun()
+
 #    st.experimental_set_query_params()
 
 def logout():
