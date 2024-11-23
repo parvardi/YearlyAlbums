@@ -6,6 +6,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
 import streamlit as st
+st.set_page_config(layout="wide")
 
 # --------------------------
 # Hide Deprecation Warnings
@@ -190,7 +191,6 @@ sp = Spotify(
 # Streamlit App UI
 # --------------------------
 
-st.set_page_config(layout="wide")
 st.title("Spotify Top Albums of the Year")
 st.write("Find your top Spotify albums released between December 2023 and December 2024.")
 
