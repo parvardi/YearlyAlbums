@@ -18,8 +18,8 @@ st.set_page_config(layout="wide")
 # --------------------------
 hide_deprecation_warnings = """
     <style>
-    /* Hide specific deprecation warning messages */
-    div[data-testid="stMarkdownContainer"] p {
+    /* Hide Streamlit's deprecation warning alerts */
+    div[data-testid="stAlert"] p {
         display: none;
     }
     </style>
@@ -84,7 +84,7 @@ def authorize():
     """
     auth_url = sp_oauth.get_authorize_url()
     st.markdown(f'[Authorize with Spotify]({auth_url})', unsafe_allow_html=True)
-    # Optionally, remove the debug line if it causes layout issues
+    # Optional: Remove debug statements if necessary
     # st.write("Current Spotify Cache after authorization URL generation:", st.session_state['spotify_cache'])
 
 def get_token():
@@ -104,7 +104,7 @@ def get_token():
                 token_info = {'access_token': token_info}
             st.session_state['spotify_cache'] = token_info
             st.success("Successfully authenticated with Spotify!")
-            # Optionally, remove the debug line
+            # Optional: Remove debug statements if necessary
             # st.write("Spotify Cache after token exchange:", st.session_state['spotify_cache'])
             # Clear query parameters to prevent reuse of the code
             clear_query_params()
