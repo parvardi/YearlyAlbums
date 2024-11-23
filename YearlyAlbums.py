@@ -83,7 +83,7 @@ def authorize():
     Generate and display the Spotify authorization URL.
     """
     auth_url = sp_oauth.get_authorize_url()
-    st.markdown(f'[Authorize with Spotify]({auth_url})', unsafe_allow_html=True)
+    st.markdown(f'[Click here to authorize with Spotify]({auth_url})', unsafe_allow_html=True)
     # Optional: Remove debug statements if necessary
     # st.write("Current Spotify Cache after authorization URL generation:", st.session_state['spotify_cache'])
 
@@ -104,14 +104,18 @@ def get_token():
                 token_info = {'access_token': token_info}
             st.session_state['spotify_cache'] = token_info
             st.success("Successfully authenticated with Spotify!")
-            # Optional: Remove debug statements if necessary
-            # st.write("Spotify Cache after token exchange:", st.session_state['spotify_cache'])
+            
+            # Retrieve and set the slider value
+            slider_value = st.session_state['spotify_cache'].get('slider_value', 5)
+            st.session_state['max_albums_per_month'] = slider_value
+            
             # Clear query parameters to prevent reuse of the code
             clear_query_params()
         except Exception as e:
             st.error(f"Failed to get access token: {e}")
             return None
     else:
+        # Show the authorization button
         authorize()
         st.stop()
 
@@ -171,7 +175,11 @@ sp = Spotify(
 # Initialize Slider State in session_state
 # --------------------------
 if 'max_albums_per_month' not in st.session_state:
-    st.session_state['max_albums_per_month'] = 5  # Default value
+    # Check if slider_value exists in spotify_cache
+    if 'spotify_cache' in st.session_state and 'slider_value' in st.session_state['spotify_cache']:
+        st.session_state['max_albums_per_month'] = st.session_state['spotify_cache']['slider_value']
+    else:
+        st.session_state['max_albums_per_month'] = 5  # Default value
 
 # --------------------------
 # Streamlit App UI
@@ -189,6 +197,17 @@ max_albums_per_month = st.slider(
     step=1,
     key='max_albums_per_month'  # Unique key for session_state binding
 )
+
+# Add an 'Authorize with Spotify' button
+if st.button("Authorize with Spotify"):
+    # Store the slider value in spotify_cache
+    st.session_state['spotify_cache']['slider_value'] = st.session_state['max_albums_per_month']
+    
+    # Generate the authorization URL
+    auth_url = sp_oauth.get_authorize_url()
+    
+    # Display the link to authorize
+    st.markdown(f'[Click here to authorize with Spotify]({auth_url})', unsafe_allow_html=True)
 
 # --------------------------
 # Authentication Flow
