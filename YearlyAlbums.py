@@ -1,33 +1,31 @@
 import logging
 logging.getLogger("streamlit").setLevel(logging.ERROR)
+
 # Ignore warnings
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-
+import os
 import streamlit as st
+
+# --------------------------
+# Set Streamlit Page Configuration
+# --------------------------
 st.set_page_config(layout="wide")
 
 # --------------------------
-# Hide Deprecation Warnings
+# Hide Deprecation Warnings via CSS
 # --------------------------
 hide_deprecation_warnings = """
     <style>
-    /* Hide specific deprecation warning messages */
-    div[data-testid="stMarkdownContainer"] p:contains("Please replace st.experimental_get_query_params") {
-        display: none;
-    }
-    div[data-testid="stMarkdownContainer"] p:contains("Please replace st.experimental_set_query_params") {
-        display: none;
+    /* Hide Streamlit's deprecation warning alerts */
+    div[data-testid="stAlert"] {
+        display: none !important;
     }
     </style>
     """
 st.markdown(hide_deprecation_warnings, unsafe_allow_html=True)
 
-
-
-
-import os
 from spotipy import Spotify
 from spotipy.oauth2 import SpotifyOAuth
 from spotipy.cache_handler import CacheHandler
@@ -39,7 +37,6 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from io import BytesIO
 import secrets
-
 
 # --------------------------
 # Custom Cache Handler
@@ -55,10 +52,11 @@ class StreamlitCacheHandler(CacheHandler):
             st.session_state['spotify_cache'] = {}
     
     def get_cached_token(self):
-        return st.session_state.get('spotify_cache', None)
+        return st.session_state.get('spotify_cache', {})
     
     def save_token_to_cache(self, token_info):
-        st.session_state['spotify_cache'] = token_info
+        # Use update to preserve existing keys like 'state'
+        st.session_state['spotify_cache'].update(token_info)
 
 # --------------------------
 # Helper Functions
@@ -76,9 +74,8 @@ def get_env_variable(var_name):
 
 def get_url_parameters():
     """
-    Retrieve URL query parameters using the updated st.query_params.
+    Retrieve URL query parameters using st.experimental_get_query_params.
     """
-    # return st.query_params
     return st.experimental_get_query_params()
 
 def authorize():
@@ -87,6 +84,8 @@ def authorize():
     """
     auth_url = sp_oauth.get_authorize_url()
     st.markdown(f'[Authorize with Spotify]({auth_url})', unsafe_allow_html=True)
+    # Optional: Remove debug statements if necessary
+    # st.write("Current Spotify Cache after authorization URL generation:", st.session_state['spotify_cache'])
 
 def get_token():
     """
@@ -94,19 +93,9 @@ def get_token():
     """
     params = get_url_parameters()
     code = params.get('code')
-    state = params.get('state')
     
     if code:
         code = code[0]
-        received_state = state[0] if state else None
-        stored_state = st.session_state['spotify_cache'].get('state')
-        
-        if received_state != stored_state:
-            st.error("State parameter mismatch. Potential CSRF attack detected.")
-            st.session_state['spotify_cache'] = {}
-            authorize()
-            st.stop()
-        
         try:
             # Exchange code for token
             token_info = sp_oauth.get_access_token(code)
@@ -115,6 +104,8 @@ def get_token():
                 token_info = {'access_token': token_info}
             st.session_state['spotify_cache'] = token_info
             st.success("Successfully authenticated with Spotify!")
+            # Optional: Remove debug statements if necessary
+            # st.write("Spotify Cache after token exchange:", st.session_state['spotify_cache'])
             # Clear query parameters to prevent reuse of the code
             clear_query_params()
         except Exception as e:
@@ -139,19 +130,8 @@ def clear_query_params():
     """
     Clear query parameters from the URL after processing.
     """
-    # st.set_query_params()
-    # st.experimental_rerun()
-    st.query_params = {}
-    # st.experimental_set_query_params()
-
-# def logout():
-#     """
-#     Logout function to clear session state and revoke tokens.
-#     """
-#     st.session_state['spotify_cache'] = {}
-#     st.experimental_set_query_params()
-#     st.success("Logged out successfully!")
-#     st.experimental_rerun()
+    st.experimental_set_query_params()
+    st.experimental_rerun()
 
 # --------------------------
 # Initialize Spotify OAuth
