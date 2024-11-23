@@ -116,19 +116,19 @@ def clear_query_params():
     """
     Clear query parameters from the URL after processing.
     """
-    st.set_query_params()
-    st.experimental_rerun()
+    # st.set_query_params()
+    # st.experimental_rerun()
 
-#    st.experimental_set_query_params()
-
-def logout():
-    """
-    Logout function to clear session state and revoke tokens.
-    """
-    st.session_state['spotify_cache'] = {}
     st.experimental_set_query_params()
-    st.success("Logged out successfully!")
-    st.experimental_rerun()
+
+# def logout():
+#     """
+#     Logout function to clear session state and revoke tokens.
+#     """
+#     st.session_state['spotify_cache'] = {}
+#     st.experimental_set_query_params()
+#     st.success("Logged out successfully!")
+#     st.experimental_rerun()
 
 # --------------------------
 # Initialize Spotify OAuth
@@ -182,8 +182,8 @@ max_albums_per_month = st.slider(
 )
 
 # Optional: Add a logout button
-if st.button("Logout"):
-    logout()
+# if st.button("Logout"):
+#     logout()
 
 # --------------------------
 # Authentication Flow
