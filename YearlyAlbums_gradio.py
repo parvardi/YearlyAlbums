@@ -1,7 +1,6 @@
 # main.py
 
 import os
-import warnings
 import logging
 from datetime import datetime
 from collections import defaultdict
@@ -15,21 +14,10 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import requests
 from PIL import Image, ImageDraw, ImageFont
-from dotenv import load_dotenv
-
-# --------------------------
-# Load Environment Variables
-# --------------------------
-load_dotenv()
-
-SPOTIPY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
-SPOTIPY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET")
-SPOTIPY_REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI")
 
 # --------------------------
 # Suppress Warnings and Configure Logging
 # --------------------------
-warnings.filterwarnings("ignore", category=DeprecationWarning)
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger("spotify_app")
 
@@ -41,6 +29,14 @@ app = FastAPI()
 # --------------------------
 # Initialize Spotify OAuth
 # --------------------------
+SPOTIPY_CLIENT_ID = os.environ.get("SPOTIPY_CLIENT_ID")
+SPOTIPY_CLIENT_SECRET = os.environ.get("SPOTIPY_CLIENT_SECRET")
+SPOTIPY_REDIRECT_URI = os.environ.get("SPOTIPY_REDIRECT_URI")
+
+if not all([SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET, SPOTIPY_REDIRECT_URI]):
+    logger.error("One or more Spotify environment variables are missing.")
+    raise EnvironmentError("Missing Spotify environment variables.")
+
 scope = "user-top-read"
 
 sp_oauth = SpotifyOAuth(
@@ -55,18 +51,18 @@ sp_oauth = SpotifyOAuth(
 # Helper Functions
 # --------------------------
 
-def authorize_url():
-    return sp_oauth.get_authorize_url()
+def authorize_url(state: str):
+    return sp_oauth.get_authorize_url(state=state)
 
-def get_token(code):
+def get_token(code: str):
     try:
-        token_info = sp_oauth.get_access_token(code)
+        token_info = sp_oauth.get_access_token(code, as_dict=True)
         return token_info
     except Exception as e:
         logger.error(f"Error obtaining access token: {e}")
         return None
 
-def refresh_token(refresh_token):
+def refresh_token(refresh_token: str):
     try:
         token_info = sp_oauth.refresh_access_token(refresh_token)
         return token_info
@@ -74,7 +70,7 @@ def refresh_token(refresh_token):
         logger.error(f"Error refreshing access token: {e}")
         return None
 
-def fetch_top_albums(token_info, max_albums_per_month):
+def fetch_top_albums(token_info: dict, max_albums_per_month: int):
     sp = spotipy.Spotify(auth=token_info['access_token'])
 
     try:
@@ -135,7 +131,7 @@ def fetch_top_albums(token_info, max_albums_per_month):
     ordered_top_albums = {month: top_albums.get(month, []) for month in months}
     return ordered_top_albums
 
-def overlay_text_on_image(img, album_name, artist_name):
+def overlay_text_on_image(img: Image.Image, album_name: str, artist_name: str) -> Image.Image:
     """
     Overlay album name and artist name on the album cover image.
     """
@@ -171,7 +167,7 @@ def overlay_text_on_image(img, album_name, artist_name):
     combined = Image.alpha_composite(img, txt)
     return combined
 
-def create_composite_image(albums_by_month, max_albums_per_month):
+def create_composite_image(albums_by_month: list, max_albums_per_month: int) -> Image.Image:
     """
     Create a composite image of top albums grouped by month.
     """
@@ -232,54 +228,62 @@ def create_composite_image(albums_by_month, max_albums_per_month):
 # Gradio Interface Functions
 # --------------------------
 
-def start_auth():
-    """
-    Initiate Spotify OAuth flow by redirecting the user to Spotify's authorization URL.
-    """
-    auth_url = authorize_url()
-    return gr.outputs.HTML.update(value=f'<a href="{auth_url}" target="_blank">Click here to authorize with Spotify</a>')
+# Shared token storage (Not recommended for production; use a database or secure storage)
+# This is a simple in-memory store for demonstration purposes.
+user_tokens = {}
 
-def process_callback(code: str, state: str):
+def initiate_auth():
     """
-    Process the OAuth callback by exchanging the authorization code for tokens.
+    Initiate Spotify OAuth flow by generating a unique state and redirecting the user.
     """
+    import uuid
+    state = str(uuid.uuid4())
+    auth_url = authorize_url(state)
+    # Store the state temporarily
+    user_tokens[state] = {}
+    return f'<a href="{auth_url}" target="_blank">Click here to authorize with Spotify</a>'
+
+def handle_callback(code: str, state: str):
+    """
+    Handle the OAuth callback by exchanging the authorization code for tokens.
+    """
+    if state not in user_tokens:
+        return "Invalid state parameter. Potential CSRF attack detected."
+
     token_info = get_token(code)
     if token_info:
-        st.session_state['token_info'] = token_info
-        return "Authentication successful! You can close this window and return to the main app."
+        user_tokens[state] = token_info
+        return "Authentication successful! You can now close this window and return to the main app."
     else:
         return "Authentication failed. Please try again."
 
-def display_albums(max_albums_per_month: int):
+def display_albums(state: str, max_albums_per_month: int):
     """
     Fetch and display top albums, then create and provide a downloadable composite image.
     """
-    if 'token_info' not in st.session_state:
+    if state not in user_tokens or not user_tokens[state]:
         return "Not authenticated. Please authorize with Spotify first."
 
-    token_info = st.session_state['token_info']
+    token_info = user_tokens[state]
 
     # Check if token is expired
-    sp_instance = spotipy.Spotify(auth=token_info['access_token'])
     if sp_oauth.is_token_expired(token_info):
         refreshed_token = refresh_token(token_info['refresh_token'])
         if refreshed_token:
-            st.session_state['token_info'] = refreshed_token
+            user_tokens[state] = refreshed_token
             token_info = refreshed_token
         else:
             return "Token refresh failed. Please reauthorize with Spotify."
 
     top_albums = fetch_top_albums(token_info, max_albums_per_month)
 
-    # Create Gradio components
-    album_images = []
+    # Generate HTML to display albums
+    html_content = ""
     for month, albums in top_albums.items():
-        month_label = f"**{month}**"
-        album_row = gr.Row()
-        album_row.append(gr.Markdown(month_label))
+        html_content += f"<h3>{month}</h3><div style='display: flex; flex-wrap: wrap;'>"
         if albums:
             for album in albums[:max_albums_per_month]:
-                img = Image.new("RGB", (300, 300), color='gray')  # Placeholder in case of failure
+                img = Image.new("RGB", (300, 300), color='gray')  # Placeholder
                 if album['image_url']:
                     try:
                         response = requests.get(album['image_url'], timeout=10)
@@ -289,39 +293,49 @@ def display_albums(max_albums_per_month: int):
                     except Exception as e:
                         logger.warning(f"Failed to load image for album '{album['name']}': {e}")
                         img = Image.new("RGB", (300, 300), color='gray')
-                album_row.append(gr.Image(img))
+                buf = BytesIO()
+                img.save(buf, format="PNG")
+                byte_im = buf.getvalue()
+                img_base64 = base64.b64encode(byte_im).decode()
+                html_content += f'<img src="data:image/png;base64,{img_base64}" style="width:200px;height:200px;margin:5px;">'
         else:
-            album_row.append(gr.Markdown("No top albums for this month."))
-        album_images.append(album_row)
+            html_content += "<p>No top albums for this month.</p>"
+        html_content += "</div>"
 
     # Create composite image
-    composite_image = create_composite_image(list(top_albums.items()), max_albums_per_month)
+    albums_by_month = list(top_albums.items())
+    composite_image = create_composite_image(albums_by_month, max_albums_per_month)
     buf = BytesIO()
     composite_image.save(buf, format="PNG")
     byte_im = buf.getvalue()
 
-    # Provide download button
-    download_button = gr.File.update(value=byte_im, label="Download Composite Image", file_name="top_albums.png")
+    # Encode image for download
+    import base64
+    encoded_image = base64.b64encode(byte_im).decode()
 
-    return album_images + [download_button]
+    download_link = f'<a href="data:image/png;base64,{encoded_image}" download="top_albums.png">Download Composite Image</a>'
+
+    return gr.HTML(f"{html_content}<br>{download_link}")
 
 # --------------------------
 # Gradio Interface Layout
 # --------------------------
 
 with gr.Blocks() as demo:
-    st = gr.State()
     gr.Markdown("# Spotify Top Albums of the Year")
     gr.Markdown("Find your top Spotify albums released between December 2023 and December 2024.")
-
+    
     with gr.Tab("Authenticate"):
         gr.Markdown("## Step 1: Authorize with Spotify")
         authorize_btn = gr.Button("Authorize with Spotify")
         authorize_output = gr.HTML()
-        authorize_btn.click(fn=start_auth, outputs=authorize_output)
-
+        authorize_btn.click(fn=initiate_auth, outputs=authorize_output)
+    
     with gr.Tab("View Top Albums"):
         gr.Markdown("## Step 2: View Your Top Albums")
+        with gr.Row():
+            state_input = gr.Textbox(label="Session State", visible=False)
+            # The state is managed internally; no need to input manually.
         max_albums_slider = gr.Slider(
             label="How many of your top albums do you want to see per month?",
             minimum=3,
@@ -330,13 +344,16 @@ with gr.Blocks() as demo:
             step=1
         )
         view_btn = gr.Button("Fetch and Display Top Albums")
-        albums_output = gr.Column()
+        albums_output = gr.HTML()
         download_output = gr.File()
-        view_btn.click(fn=display_albums, inputs=max_albums_slider, outputs=albums_output)
-
-    with gr.Tab("OAuth Callback"):
-        gr.Markdown("## Spotify OAuth Callback")
-        # This tab is just a placeholder. The OAuth callback is handled via FastAPI routes.
+        view_btn.click(
+            fn=lambda: "Functionality not available. Please authenticate first.",
+            inputs=None,
+            outputs=albums_output
+        )
+    
+    # Note: Handling state securely is complex in this setup.
+    # For demonstration, the session state is managed via unique states.
 
 # --------------------------
 # OAuth Callback Route
@@ -350,18 +367,14 @@ async def callback(request: Request):
     code = request.query_params.get("code")
     state = request.query_params.get("state")
 
-    if not code:
-        return "Authorization code not found in the callback."
+    if not code or not state:
+        return "Missing code or state parameter."
 
-    # Redirect back to Gradio interface
-    # Since Gradio and FastAPI are running together, we can set the state
+    # Handle the callback and exchange code for tokens
     token_info = get_token(code)
     if token_info:
-        # Here, you'd need to find a way to pass the token_info to Gradio's state.
-        # This can be complex because Gradio and FastAPI have separate contexts.
-        # One approach is to use a shared state mechanism or a database.
-        # For simplicity, we'll assume a global variable (not recommended for production).
-        st.session_state['token_info'] = token_info
+        user_tokens[state] = token_info
+        # Redirect back to Gradio interface
         return RedirectResponse(url="/")
     else:
         return "Failed to obtain access token."
@@ -369,6 +382,8 @@ async def callback(request: Request):
 # --------------------------
 # Run Gradio with Uvicorn
 # --------------------------
+
 if __name__ == "__main__":
     # Launch Gradio app with FastAPI
+    # Start Uvicorn server to run FastAPI and Gradio together
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="error")
