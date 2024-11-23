@@ -181,14 +181,16 @@ st.title("Spotify Top Albums of the Year")
 st.write("Find your top Spotify albums released between December 2023 and December 2024.")
 
 # Add a slider for user input, binding it to session_state
-max_albums_per_month = st.slider(
-    "How many of your top albums do you want to see per month?",
-    min_value=3,
-    max_value=10,
-    value=st.session_state['max_albums_per_month'],
-    step=1,
-    key='max_albums_per_month'  # Unique key for session_state binding
-)
+# max_albums_per_month = st.slider(
+#     "How many of your top albums do you want to see per month?",
+#     min_value=3,
+#     max_value=10,
+#     value=st.session_state['max_albums_per_month'],
+#     step=1,
+#     key='max_albums_per_month'  # Unique key for session_state binding
+# )
+
+max_albums_per_month = 5
 
 # --------------------------
 # Authentication Flow
