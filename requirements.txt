@@ -2,4 +2,3 @@ streamlit
 spotipy
 Pillow
 requests
-gradio
