@@ -14,7 +14,7 @@ import secrets
 
 # Ignore warnings
 import warnings
-warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # --------------------------
 # Custom Cache Handler
