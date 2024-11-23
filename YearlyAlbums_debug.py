@@ -19,8 +19,8 @@ st.set_page_config(layout="wide")
 hide_deprecation_warnings = """
     <style>
     /* Hide Streamlit's deprecation warning alerts */
-    div[data-testid="stAlert"] p {
-        display: none;
+    div[data-testid="stAlert"] {
+        display: none !important;
     }
     </style>
     """
